@@ -1,0 +1,168 @@
+version: "3"
+
+services:
+  reverse_proxy:
+    container_name: reverse_proxy
+    hostname: reverse_proxy
+    image: nginx:latest
+    ports:
+      - 80:80
+      - 443:443
+    volumes:
+      - ./nginx:/etc/nginx
+      - ./ssl:/etc/ssl/private
+    restart: unless-stopped
+
+  database:
+    image: mysql:5.7
+    container_name: database
+    platform: linux/amd64 #for platform error on Apple M1 chips
+    restart: unless-stopped
+    command: --default-authentication-plugin=mysql_native_password
+    env_file: .env
+    environment:
+      MYSQL_USER: ${DATABASE_USERNAME}
+      MYSQL_ROOT_PASSWORD: ${DATABASE_PASSWORD}
+      MYSQL_PASSWORD: ${DATABASE_PASSWORD}
+      MYSQL_DATABASE: ${DATABASE_NAME}
+    volumes:
+      - database:/var/lib/mysql
+      - ./data/mysql:/var/lib/mysql/data/
+    ports:
+      - 3306:3306
+    networks:
+      - my-network
+
+  redis:
+    image: redis:latest
+    ports:
+      - 6379:6379
+    command: [ "redis-server", "--appendonly", "yes" ]
+    volumes:
+      - redis-data:/data
+    networks:
+      - my-network
+
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    environment:
+      - REDIS_HOSTS=local:redis:6379
+      - HTTP_USER=${REDIS_USER}
+      - HTTP_PASSWORD=${REDIS_PASSWORD}
+    ports:
+      - 8081:8081
+    depends_on:
+      - redis
+    networks:
+      - my-network
+
+  dbBackup:
+    image: fradelg/mysql-cron-backup
+    depends_on:
+      - database
+    restart: unless-stopped
+    volumes:
+      - ./data/mysqlDBBkp:/backup
+    environment:
+      - MYSQL_HOST=database
+      - MYSQL_USER=${DATABASE_USERNAME}
+      - MYSQL_PASS=${DATABASE_PASSWORD}
+      - MYSQL_DB=${DATABASE_NAME}
+      - CRON_TIME=0 3 * * *
+      - MYSQL_PORT=3306
+      - MAX_BACKUPS=5
+      - INIT_BACKUP=1
+      - GZIP_LEVEL=9
+    networks:
+      - my-network
+  
+  grafana:
+    container_name: grafana
+    hostname: grafana
+    image: grafana/grafana:latest
+    ports:
+      - 3031:3000
+    volumes:
+      - grafana-storage:/var/lib/grafana
+    restart: unless-stopped
+
+  prometheus:
+    container_name: prometheus
+    hostname: prometheus
+    image: prom/prometheus:latest
+    ports:
+      - 9090:9090
+    volumes:
+      - ./prometheus:/etc/prometheus
+    restart: unless-stopped
+    command: --web.enable-lifecycle  --config.file=/etc/prometheus/prometheus.yml
+
+  portainer:
+    container_name: portainer
+    hostname: portainer
+    image: portainer/portainer-ce:latest
+    ports:
+      - "9000:9000"
+      - "8000:8000"
+    volumes:
+      - portainer_data:/data
+      - /var/run/docker.sock:/var/run/docker.sock
+    restart: always
+
+  node-exporter:
+    container_name: node-exporter
+    hostname: node-exporter
+    image: prom/node-exporter:latest
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.sysfs=/host/sys'
+      - --collector.filesystem.ignored-mount-points
+      - "^/(sys|proc|dev|host|etc|rootfs/var/lib/docker/containers|rootfs/var/lib/docker/overlay2|rootfs/run/docker/netns|rootfs/var/lib/docker/aufs)($$|/)"
+    ports:
+      - 9100:9100
+    restart: unless-stopped
+
+  docker-exporter:
+    container_name: docker-exporter
+    hostname: docker-exporter
+    image: prometheusnet/docker_exporter:latest
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    ports:
+      - 9417:9417
+    restart: always
+
+  letsencrypt:
+    image: linuxserver/letsencrypt
+    container_name: letsencrypt
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=America/Sao_Paulo
+      - URL=apmifcentenariodosul.tk
+      - SUBDOMAINS=wildcard,
+      - VALIDATION=dns
+      - DNSPLUGIN=cloudflare
+      - EMAIL=admin@paulospiguel.com
+      - DHLEVEL=4096
+    volumes:
+      - ./config:/config
+    restart: unless-stopped
+
+volumes:
+  database:
+  redis-data:
+  data:
+  portainer_data:
+  grafana-storage:
+  etc-nginx:
+  ssl-nginx:
+
+networks:
+  my-network:
+    name: MyNetwork
+    driver: bridge

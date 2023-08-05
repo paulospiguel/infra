@@ -2,16 +2,17 @@ version: '3.7'
 
 services:
   mysql:
-    image: mysql:8
-    container_name: mysql
+    image: mysql:8.0
+    container_name: database
     restart: always
     environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
-      MYSQL_DATABASE: ${MYSQL_DATABASE}
-      MYSQL_USER: ${MYSQL_USER}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${DATABASE_PASSWORD}
+      MYSQL_DATABASE: ${DATABASE_NAME}
+      MYSQL_USER: ${DATABASE_USERNAME}
+      MYSQL_PASSWORD: ${DATABASE_PASSWORD}
+      MYSQL_GTID_MODE: ON
     volumes:
-      - mysql_data:/var/lib/mysql
+      - mysql8:/var/lib/mysql
     ports:
       - "3306:3306"
 
@@ -22,5 +23,27 @@ services:
     ports:
       - "8080:8080"
 
+  backup:
+    image: fradelg/mysql-cron-backup
+    container_name: backup-mysql
+    env_file:
+      - .env
+    depends_on:
+      - mysql
+    volumes:
+      - ${VOLUME_PATH}/backup:/backup
+    environment:
+      - MYSQL_HOST=database
+      - MYSQL_USER=root
+      - MYSQL_PASS=${DATABASE_PASSWORD}
+      - MAX_BACKUPS=15
+      - INIT_BACKUP=0
+      # Every day at 03:00
+      - CRON_TIME=0 3 * * *
+      # Make it small
+      - GZIP_LEVEL=9
+    restart: unless-stopped
+  
 volumes:
-  mysql_data:
+  mysql8:
+  mysql57:
