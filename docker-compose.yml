@@ -2,7 +2,8 @@ version: '3.7'
 
 services:
   mysql:
-    image: mysql:8.0
+    build: .
+    dockerfile: Dockerfile
     container_name: database
     restart: always
     environment:
@@ -10,7 +11,6 @@ services:
       MYSQL_DATABASE: ${DATABASE_NAME}
       MYSQL_USER: ${DATABASE_USERNAME}
       MYSQL_PASSWORD: ${DATABASE_PASSWORD}
-      MYSQL_GTID_MODE: ON
     volumes:
       - mysql8:/var/lib/mysql
     ports:
